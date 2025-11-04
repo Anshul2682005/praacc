@@ -1,0 +1,375 @@
+Pract 6
+
+# ua_check.py (save code with ua_check.py) 
+import requests 
+TARGET = "http://example.com"   # <-- change to your target (or use http://localhost) 
+USER_AGENTS = { 
+"Firefox": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:104.0) Gecko/20100101 
+Firefox/104.0", 
+"Googlebot": "Mozilla/5.0 (compatible; Googlebot/2.1; 
++http://www.google.com/bot.html)", 
+"curl": "curl/7.68.0" 
+} 
+def check_ua(url): 
+results = {} 
+for name, ua in USER_AGENTS.items(): 
+try: 
+r = requests.get(url, headers={"User-Agent": ua}, timeout=8) 
+results[name] = { 
+"status": r.status_code, 
+"length": len(r.text), 
+"snippet": r.text[:200].replace("\n", " ") 
+} 
+except Exception as e: 
+results[name] = {"status": "ERROR", "error": str(e)} 
+return results 
+if __name__ == "__main__": 
+res = check_ua(TARGET) 
+print(f"Target: {TARGET}\n") 
+for ua_name, info in res.items(): 
+if info.get("status") == "ERROR": 
+print(f"{ua_name:10} -> ERROR: {info['error']}") 
+else: 
+print(f"{ua_name:10} -> status={info['status']} length={info['length']}") 
+print(f"  snippet: {info['snippet']}\n")
+
+
+
+Pract 7
+
+1. Open Wireshark → select the correct interface (e.g., eth0, wlan0, en0). 
+2. Click the shark-fin Start button. 
+3. Use a simple capture filter immediately (see next section) to limit traffic volume. 
+4. Stop and save (File → Save).
+
+
+Pract 8
+
+from scapy.all import sniff, IP, TCP, UDP, ICMP 
+from collections import Counter 
+import time 
+# Stores statistics 
+packet_stats = { 
+"total": 0, 
+"tcp": 0, 
+"udp": 0, 
+"icmp": 0, 
+"other": 0, 
+"src_ips": Counter(), 
+"dst_ips": Counter() 
+} 
+# Function to analyze each captured packet 
+def analyze_packet(packet): 
+packet_stats["total"] += 1 
+if IP in packet: 
+ip_layer = packet[IP] 
+packet_stats["src_ips"][ip_layer.src] += 1 
+packet_stats["dst_ips"][ip_layer.dst] += 1 
+if TCP in packet: 
+packet_stats["tcp"] += 1 
+elif UDP in packet: 
+packet_stats["udp"] += 1 
+elif ICMP in packet: 
+packet_stats["icmp"] += 1 
+else: 
+packet_stats["other"] += 1 
+else: 
+packet_stats["other"] += 1 
+# Function to print analysis results 
+def print_stats(): 
+print("\n=== Packet Capture Summary ===") 
+print(f"Total packets captured: {packet_stats['total']}") 
+print(f"TCP packets: {packet_stats['tcp']}") 
+print(f"UDP packets: {packet_stats['udp']}") 
+print(f"ICMP packets: {packet_stats['icmp']}") 
+print(f"Other packets: {packet_stats['other']}") 
+print("\nTop 5 Source IPs:") 
+for ip, count in packet_stats["src_ips"].most_common(5): 
+print(f"{ip}: {count} packets") 
+print("\nTop 5 Destination IPs:") 
+for ip, count in packet_stats["dst_ips"].most_common(5): 
+print(f"{ip}: {count} packets") 
+# Main function to start packet capture 
+def start_sniffing(interface=None, packet_count=50, timeout=None): 
+print(f"[*] Capturing packets on interface: {interface or 'default'}") 
+start_time = time.time() 
+sniff( 
+iface=interface,         
+prn=analyze_packet,      
+count=packet_count,      
+timeout=timeout,         
+store=False              
+# Interface (None = default) 
+# Function called for each packet 
+# Number of packets to capture 
+# Stop after timeout (in seconds) 
+# Do not store packets in memory 
+) 
+duration = time.time() - start_time 
+print(f"\n[*] Capture complete in {duration:.2f} seconds") 
+print_stats() 
+if __name__ == "__main__": 
+    # Run the sniffer 
+    start_sniffing(packet_count=50) 
+
+
+
+Pract 9
+
+A: Fast async TCP port scanner  
+import asyncio, time 
+TARGET = "127.0.0.1" 
+PORTS = range(1, 1025) 
+CONCURRENCY = 500 
+TIMEOUT = 1.0 
+async def try_connect(sema, host, port): 
+start = time.perf_counter() 
+try: 
+async with sema: 
+r, w = await asyncio.wait_for(asyncio.open_connection(host, port), TIMEOUT) 
+w.close() 
+await w.wait_closed() 
+return port, True, (time.perf_counter()-start)*1000 
+except: 
+return port, False, (time.perf_counter()-start)*1000 
+async def main(): 
+sema = asyncio.Semaphore(CONCURRENCY) 
+tasks = [asyncio.create_task(try_connect(sema, TARGET, p)) for p in PORTS] 
+results = await asyncio.gather(*tasks) 
+openp = sorted(p for p, ok, _ in results if ok) 
+elapsed = sum(r[2] for r in results)  # not perfect but cheap 
+print(f"Scanned {len(results)} ports, open: {openp}, total elapsed (approx): {elapsed:.0f} 
+ms") 
+if __name__ == "__main__": 
+start=time.time(); asyncio.run(main()); print("Wall:", time.time()-start) 
+
+
+B: Local password-audit demo (safe) 
+# pw_audit.py — local password check (lab-only) 
+import hashlib 
+WEAK = ["123456","password","qwerty"] 
+DB = {"bob": hashlib.sha256(b"password").hexdigest(), "alice": 
+hashlib.sha256(b"strong").hexdigest()} 
+found=[] 
+for user,h in DB.items(): 
+for pw in WEAK: 
+if hashlib.sha256(pw.encode()).hexdigest()==h: 
+found.append((user,pw)) 
+if found: 
+print("Weak pw found:", found) 
+else: 
+print("No weak passwords found")
+
+
+
+Pract 10
+
+Run as root / admin: 
+sudo python3 simple_ids.py 
+""" 
+import time 
+import threading 
+import queue 
+from collections import defaultdict, deque, Counter 
+from dataclasses import dataclass 
+import logging 
+import sys 
+# Scapy import (requires libpcap / Npcap) 
+try: 
+from scapy.all import sniff, IP, TCP, UDP, ICMP 
+except Exception as e: 
+print("Scapy import failed:", e) 
+print("Make sure scapy is installed and libpcap/npcap is available.") 
+sys.exit(1) 
+# ----- Configuration ----- 
+CAPTURE_INTERFACE = None           
+PACKET_QUEUE_SIZE = 10000 
+ANALYSIS_INTERVAL = 1.0            
+WINDOW_SECONDS = 10                
+# None = default, or "eth0", "wlan0", etc. 
+# seconds between analysis passes 
+# sliding window size for detections 
+PORTSCAN_PORT_THRESHOLD = 20       # distinct dst ports in WINDOW => port scan 
+SYN_FLOOD_SYN_THRESHOLD = 100      # SYNs in WINDOW => possible SYN flood 
+PKT_RATE_THRESHOLD = 500           
+# Logging / alerting 
+# packets from same src in WINDOW => high rate 
+format="%(asctime)s 
+[%(levelname)s] 
+logging.basicConfig(level=logging.INFO, 
+%(message)s") 
+logger = logging.getLogger("simple_ids") 
+# ----- Data structures ----- 
+# We'll queue simple packet summaries from capture thread to analyzer thread 
+pkt_queue = queue.Queue(maxsize=PACKET_QUEUE_SIZE) 
+@dataclass 
+class PktSummary: 
+ts: float 
+src: str 
+dst: str 
+sport: int 
+dport: int 
+proto: str 
+flags: str  # for TCP flags, else "" 
+# Per-src sliding window state 
+class SrcState: 
+def __init__(self): 
+# Deques store timestamps of events for sliding window 
+self.pkts = deque()                
+# timestamps of packets 
+self.dst_ports = defaultdict(deque)  # dst_port -> deque of timestamps (for distinct 
+count) 
+self.tcp_syns = deque()            
+self.tcp_acks = deque()            
+def cleanup(self, now, window): 
+# timestamps of SYN attempts 
+# timestamps of ACKs (optional) 
+# Remove older entries outside the window 
+cutoff = now - window 
+while self.pkts and self.pkts[0] < cutoff: 
+self.pkts.popleft() 
+# cleanup dst_ports entries (and remove keys with empty deque) 
+for port in list(self.dst_ports.keys()): 
+dq = self.dst_ports[port] 
+while dq and dq[0] < cutoff: 
+dq.popleft() 
+if not dq: 
+del self.dst_ports[port] 
+while self.tcp_syns and self.tcp_syns[0] < cutoff: 
+self.tcp_syns.popleft() 
+while self.tcp_acks and self.tcp_acks[0] < cutoff: 
+self.tcp_acks.popleft() 
+# Global per-src map and lock 
+src_map = defaultdict(SrcState) 
+src_lock = threading.Lock() 
+# ----- Capture callback ----- 
+def capture_packet(pkt): 
+""" 
+Called by scapy for every packet. We quickly summarize and push to queue. 
+Keep this function fast and non-blocking. 
+""" 
+if IP not in pkt: 
+return 
+ip = pkt[IP] 
+src = ip.src 
+dst = ip.dst 
+sport = 0 
+dport = 0 
+proto = "OTHER" 
+flags = "" 
+if TCP in pkt: 
+proto = "TCP" 
+sport = pkt[TCP].sport 
+dport = pkt[TCP].dport 
+flags = pkt[TCP].sprintf("%flags%") 
+elif UDP in pkt: 
+proto = "UDP" 
+sport = pkt[UDP].sport 
+dport = pkt[UDP].dport 
+elif ICMP in pkt: 
+proto = "ICMP" 
+summary = PktSummary(ts=time.time(), src=src, dst=dst, sport=sport, dport=dport, 
+proto=proto, flags=flags) 
+try: 
+pkt_queue.put_nowait(summary) 
+except queue.Full: 
+# If the queue is full, drop packet (and optionally log once per interval) 
+# Avoid flooding logs 
+pass 
+# ----- Analyzer thread ----- 
+def analyzer(): 
+""" 
+Consume packet summaries and maintain sliding-window stats. 
+Periodically evaluate detection rules. 
+""" 
+last_eval = time.time() 
+dropped_log_ts = 0 
+while True: 
+try: 
+# Drain queue with short timeout so we periodically run detections 
+try: 
+ps = pkt_queue.get(timeout=ANALYSIS_INTERVAL) 
+now = ps.ts 
+with src_lock: 
+state = src_map[ps.src] 
+state.pkts.append(now) 
+# record destination port usage for portscan detection 
+if ps.dport: 
+state.dst_ports[ps.dport].append(now) 
+# record TCP SYNs/ACKs 
+if ps.proto == "TCP": 
+if "S" in ps.flags and "A" not in ps.flags: 
+state.tcp_syns.append(now) 
+if "A" in ps.flags: 
+state.tcp_acks.append(now) 
+pkt_queue.task_done() 
+except queue.Empty: 
+# no packet arrived in interval; run evaluation 
+now = time.time() 
+# Periodic cleanup and detection 
+if time.time() - last_eval >= ANALYSIS_INTERVAL: 
+last_eval = time.time() 
+run_detections(now) 
+except Exception as e: 
+logger.exception("Analyzer error: %s", e) 
+def run_detections(now): 
+alerts = [] 
+to_delete = [] 
+with src_lock: 
+for src, state in list(src_map.items()): 
+state.cleanup(now, WINDOW_SECONDS) 
+pkt_count = len(state.pkts) 
+distinct_ports = len(state.dst_ports) 
+syn_count = len(state.tcp_syns) 
+ack_count = len(state.tcp_acks) 
+# Detection rules 
+if distinct_ports >= PORTSCAN_PORT_THRESHOLD and pkt_count >= 
+PORTSCAN_PORT_THRESHOLD: 
+alerts.append((src, "PORT_SCAN", { 
+"distinct_ports": distinct_ports, 
+"packets": pkt_count 
+})) 
+# Heuristic: many SYNs but few ACKs -> possible SYN flood or half-open 
+connections 
+if syn_count >= SYN_FLOOD_SYN_THRESHOLD and ack_count < (syn_count * 
+0.1): 
+memory 
+alerts.append((src, "SYN_FLOOD", { 
+"syns": syn_count, 
+"acks": ack_count 
+})) 
+if pkt_count >= PKT_RATE_THRESHOLD: 
+alerts.append((src, "HIGH_PKT_RATE", { 
+"packets": pkt_count 
+})) 
+# If the source hasn't produced any packets in window, remove its state to save 
+if pkt_count == 0 and distinct_ports == 0 and syn_count == 0: 
+to_delete.append(src) 
+# Remove idle src states 
+for s in to_delete: 
+del src_map[s] 
+# Emit alerts (outside lock) 
+for src, typ, info in alerts: 
+emit_alert(src, typ, info) 
+def emit_alert(src, typ, info): 
+# Simple console and logger alert 
+msg = f"ALERT {typ} from {src} — {info}" 
+print(msg) 
+logger.warning(msg) 
+# TODO: add email, webhook, or other alerting 
+# ----- Runner ----- 
+def main(): 
+# Start analyzer thread 
+t = threading.Thread(target=analyzer, daemon=True) 
+t.start() 
+iface = CAPTURE_INTERFACE 
+print(f"Starting capture on interface: {iface or 'default'} (press Ctrl-C to stop)") 
+try: 
+# sniff is blocking; it will call capture_packet for each packet 
+sniff(iface=iface, prn=capture_packet, store=False) 
+except KeyboardInterrupt: 
+print("Stopping...") 
+except Exception as e: 
+logger.exception("sniff failed: %s", e) 
+if __name__ == "__main__": 
+main() 

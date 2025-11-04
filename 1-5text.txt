@@ -1,0 +1,281 @@
+PRACT 1:
+CAESER CIPHER:
+
+def caesar_cipher(text, shift, mode='encrypt'):
+    result = ""
+    
+    # Reverse shift if decrypting
+    if mode == 'decrypt':
+        shift = -shift
+
+    for char in text:
+        if char.isalpha():
+            start = ord('A') if char.isupper() else ord('a')
+            result += chr((ord(char) - start + shift) % 26 + start)
+        else:
+            result += char
+
+    return result
+
+
+# ---- User Input ----
+text = input("Enter your text: ")
+shift = int(input("Enter shift value (e.g., 3): "))
+mode = input("Type 'encrypt' or 'decrypt': ").lower()
+
+# ---- Process ----
+if mode not in ['encrypt', 'decrypt']:
+    print("Invalid mode! Please type 'encrypt' or 'decrypt'.")
+else:
+    output = caesar_cipher(text, shift, mode)
+    print(f"\nResult ({mode}ed text): {output}")
+
+
+PLAYFAIR CIPHER
+
+def generate_key_matrix(key):
+    # Remove duplicates while preserving order
+    key = key.upper().replace("J", "I")
+    matrix = []
+    for char in key:
+        if char not in matrix and char.isalpha():
+            matrix.append(char)
+    
+    # Fill the rest of the matrix with remaining letters
+    for char in "ABCDEFGHIKLMNOPQRSTUVWXYZ":  # No 'J'
+        if char not in matrix:
+            matrix.append(char)
+
+    # Convert list to 5x5 matrix
+    return [matrix[i:i+5] for i in range(0, 25, 5)]
+
+
+def find_position(matrix, char):
+    for i in range(5):
+        for j in range(5):
+            if matrix[i][j] == char:
+                return i, j
+    return None
+
+
+def process_text(text, encrypt=True):
+    # Prepare text for encryption/decryption
+    text = text.upper().replace("J", "I")
+    text = ''.join(filter(str.isalpha, text))  # Remove non-letters
+    pairs = []
+    i = 0
+
+    while i < len(text):
+        a = text[i]
+        b = text[i + 1] if i + 1 < len(text) else 'X'
+        if a == b:
+            pairs.append(a + 'X')
+            i += 1
+        else:
+            pairs.append(a + b)
+            i += 2
+
+    return pairs
+
+
+def playfair_cipher(text, key, encrypt=True):
+    matrix = generate_key_matrix(key)
+    pairs = process_text(text, encrypt)
+    result = ""
+
+    for pair in pairs:
+        a, b = pair[0], pair[1]
+        row1, col1 = find_position(matrix, a)
+        row2, col2 = find_position(matrix, b)
+
+        if row1 == row2:
+            # Same row
+            if encrypt:
+                result += matrix[row1][(col1 + 1) % 5]
+                result += matrix[row2][(col2 + 1) % 5]
+            else:
+                result += matrix[row1][(col1 - 1) % 5]
+                result += matrix[row2][(col2 - 1) % 5]
+        elif col1 == col2:
+            # Same column
+            if encrypt:
+                result += matrix[(row1 + 1) % 5][col1]
+                result += matrix[(row2 + 1) % 5][col2]
+            else:
+                result += matrix[(row1 - 1) % 5][col1]
+                result += matrix[(row2 - 1) % 5][col2]
+        else:
+            # Rectangle rule
+            result += matrix[row1][col2]
+            result += matrix[row2][col1]
+
+    return result
+
+
+# ---- USER INTERACTION ----
+print("=== Playfair Cipher ===")
+text = input("Enter your text: ")
+key = input("Enter the key: ")
+mode = input("Type 'encrypt' or 'decrypt': ").lower()
+
+if mode == "encrypt":
+    result = playfair_cipher(text, key, encrypt=True)
+    print("\nEncrypted text:", result)
+elif mode == "decrypt":
+    result = playfair_cipher(text, key, encrypt=False)
+    print("\nDecrypted text:", result)
+else:
+    print("Invalid mode! Please type 'encrypt' or 'decrypt'.")
+
+
+
+
+PRACT 2:
+pip install pycryptodome
+
+CODE:
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+import base64
+
+def encrypt_message(message, key):
+    cipher = AES.new(key, AES.MODE_CBC)
+    ct_bytes = cipher.encrypt(pad(message.encode(), AES.block_size))
+    iv = base64.b64encode(cipher.iv).decode('utf-8')
+    ct = base64.b64encode(ct_bytes).decode('utf-8')
+    return iv, ct
+
+def decrypt_message(iv, ct, key):
+    iv = base64.b64decode(iv)
+    ct = base64.b64decode(ct)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    pt = unpad(cipher.decrypt(ct), AES.block_size)
+    return pt.decode('utf-8')
+
+# --- Main interactive part ---
+print("=== AES Encryption/Decryption Demo ===")
+
+# Key setup (for simplicity, generate random each run)
+key = get_random_bytes(16)
+
+while True:
+    choice = input("\nChoose: (E)ncrypt, (D)ecrypt, or (Q)uit: ").strip().lower()
+
+    if choice == 'e':
+        message = input("Enter the message to encrypt: ")
+        iv, ciphertext = encrypt_message(message, key)
+        print("\n--- Encrypted Output ---")
+        print("IV:", iv)
+        print("Ciphertext:", ciphertext)
+
+    elif choice == 'd':
+        iv = input("Enter the IV: ")
+        ciphertext = input("Enter the Ciphertext: ")
+        try:
+            plaintext = decrypt_message(iv, ciphertext, key)
+            print("\n--- Decrypted Message ---")
+            print(plaintext)
+        except Exception as e:
+            print("Error: Could not decrypt. Check IV/ciphertext.")
+
+    elif choice == 'q':
+        print("Goodbye!")
+        break
+    else:
+        print("Invalid option. Please choose E, D, or Q.")
+
+
+
+PRACT 3:
+MD5
+import hashlib
+
+print("=== MD5 Hash Generator ===")
+
+while True:
+    text = input("\nEnter a string to hash (or 'q' to quit): ").strip()
+    if text.lower() == 'q':
+        print("Goodbye!")
+        break
+
+    md5_hash = hashlib.md5(text.encode()).hexdigest()
+    print("MD5 Hash:", md5_hash)
+
+SHA1
+import hashlib
+
+print("=== SHA-1 Hash Generator ===")
+
+while True:
+    text = input("\nEnter a string to hash (or 'q' to quit): ").strip()
+    if text.lower() == 'q':
+        print("Goodbye!")
+        break
+
+    sha1_hash = hashlib.sha1(text.encode()).hexdigest()
+    print("SHA-1 Hash:", sha1_hash)
+
+
+PRACT 4
+SERVER:
+import socket
+#create a socket object
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+#get local machine name (or use '127.0.0.1' for localhost)
+host = '127.0.0.1'
+port = 12345
+
+#bind socket to the port
+server_socket.bind((host, port))
+
+#start listening (max 1 client at a time for simplicity)
+server_socket.listen(1)
+
+print(f"Server listening on {host}:{port}....")
+
+#Accept a connection
+client_socket, addr = server_socket.accept()
+print(f"Connected to client at {addr}")
+
+#Receive data from the client(max 1024 bytes)
+data = client_socket.recv(1024).decode()
+print(f"Received from client: {data}")
+
+#send a response to the client
+response = "Hello, from server!"
+client_socket.send(response.encode())
+
+#close the connection
+client_socket.close()
+server_socket.close()
+
+
+CLIENT:
+import socket
+#create a socket object
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+#connect to the server
+host = '127.0.0.1'
+port = 12345
+
+client_socket.connect((host, port))
+
+#send data to the server
+message = "Hello, from client!"
+client_socket.send(message.encode())
+
+#receive response
+data = client_socket.recv(1024).decode()
+print("Received from server:", data)
+
+#close the connection
+client_socket.close()
+
+
+
+PRACT 5:
+
+for i in {1...10}; do openssl rand -base64 12l cut -cl-12; done
